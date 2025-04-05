@@ -3,8 +3,10 @@ import requests
 
 app = Flask(__name__)
 
+# Layer URLs
 ZONING_LAYER_URL = "https://services8.arcgis.com/s7n9cRiugyMCsR0U/arcgis/rest/services/zoning_polys_LUZO/FeatureServer/0/query"
 PARCEL_LAYER_URL = "https://services8.arcgis.com/s7n9cRiugyMCsR0U/arcgis/rest/services/Parcel_layers_ArcGISonline_LUZO/FeatureServer/0/query"
+LAND_USE_LAYER_URL = "https://services8.arcgis.com/s7n9cRiugyMCsR0U/arcgis/rest/services/land_use_poly_LUZO/FeatureServer/0/query"
 
 @app.route('/')
 def home():
@@ -16,7 +18,7 @@ def get_zoning():
     if not address:
         return jsonify({"error": "Please provide an address using ?address="}), 400
 
-    # Step 1: Geocode address
+    # Step 1: Geocode
     geocode_url = "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates"
     geocode_params = {
         "f": "json",
@@ -33,9 +35,9 @@ def get_zoning():
     lon = location['x']
     lat = location['y']
 
-    # Step 1.5: Query APN from parcel layer
+    # Step 2: Query Parcel Layer for APN
     apn = ""
-    apn_params = {
+    parcel_params = {
         "geometry": f"{lon},{lat}",
         "geometryType": "esriGeometryPoint",
         "inSR": "4326",
@@ -45,12 +47,12 @@ def get_zoning():
         "f": "json"
     }
 
-    apn_resp = requests.get(PARCEL_LAYER_URL, params=apn_params).json()
-    apn_features = apn_resp.get("features", [])
-    if apn_features:
-        apn = apn_features[0]["attributes"].get("APN", "")
+    parcel_resp = requests.get(PARCEL_LAYER_URL, params=parcel_params).json()
+    parcel_features = parcel_resp.get("features", [])
+    if parcel_features:
+        apn = parcel_features[0]["attributes"].get("APN", "")
 
-    # Step 2: Query zoning/land use layer
+    # Step 3: Query Zoning Layer
     buffer = 0.0002
     zoning_params = {
         "geometry": f"{lon - buffer},{lat - buffer},{lon + buffer},{lat + buffer}",
@@ -62,36 +64,47 @@ def get_zoning():
         "f": "json"
     }
 
-    zoning_res = requests.get(ZONING_LAYER_URL, params=zoning_params).json()
-    features = zoning_res.get('features', [])
-    if not features:
-        return jsonify({
-            "input_address": address,
-            "latitude": lat,
-            "longitude": lon,
-            "zoning_code": "",
-            "parcel_apn": apn,
-            "status": "No zoning code found. May be outside the GIS layer."
-        })
+    zoning_resp = requests.get(ZONING_LAYER_URL, params=zoning_params).json()
+    zoning_features = zoning_resp.get("features", [])
+    zoning_data = zoning_features[0]["attributes"] if zoning_features else {}
 
-    attr = features[0]['attributes']
+    # Step 4: Query Land Use Layer
+    land_use_params = {
+        "geometry": f"{lon - buffer},{lat - buffer},{lon + buffer},{lat + buffer}",
+        "geometryType": "esriGeometryEnvelope",
+        "inSR": "4326",
+        "spatialRel": "esriSpatialRelIntersects",
+        "outFields": "*",
+        "returnGeometry": "false",
+        "f": "json"
+    }
 
+    land_use_resp = requests.get(LAND_USE_LAYER_URL, params=land_use_params).json()
+    land_use_features = land_use_resp.get("features", [])
+    land_use_data = land_use_features[0]["attributes"] if land_use_features else {}
+
+    # Final response
     return jsonify({
         "input_address": address,
         "latitude": lat,
         "longitude": lon,
         "parcel_apn": apn,
-        "zoning_code": attr.get("ZONING", ""),
-        "zoning_description": attr.get("ZonDescrip", ""),
-        "zoning_class": attr.get("GEN_CLASS", ""),
-        "zoning_type": attr.get("GEN_TYPE", ""),
-        "land_use_code": attr.get("LANDUSE", ""),
-        "land_use_description": attr.get("LAND_DESC", ""),
-        "urban_status": attr.get("URBAN", ""),
-        "general_plan": attr.get("GEN_PLAN", ""),
-        "zoning_overlay": attr.get("ZONEMOD", "")
+        "zoning_code": zoning_data.get("ZONING", ""),
+        "zoning_description": zoning_data.get("ZonDescrip", ""),
+        "zoning_class": zoning_data.get("GEN_CLASS", ""),
+        "zoning_type": zoning_data.get("GEN_TYPE", ""),
+        "land_use_code": land_use_data.get("LAND_USE", ""),
+        "land_use_description": land_use_data.get("LU_Descrip", ""),
+        "land_use_class": land_use_data.get("GEN_CLASS", ""),
+        "land_use_type": land_use_data.get("GEN_TYPE", ""),
+        "parcel_acres": land_use_data.get("Acres", ""),
+        "urban_status": zoning_data.get("URBAN", ""),
+        "general_plan": zoning_data.get("GEN_PLAN", ""),
+        "zoning_overlay": zoning_data.get("ZONEMOD", ""),
+        "status": "OK" if zoning_features or land_use_features else "No zoning/land use data found"
     })
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 

@@ -4,6 +4,7 @@ import requests
 app = Flask(__name__)
 
 ZONING_LAYER_URL = "https://services8.arcgis.com/s7n9cRiugyMCsR0U/arcgis/rest/services/zoning_polys_LUZO/FeatureServer/0/query"
+PARCEL_LAYER_URL = "https://services8.arcgis.com/s7n9cRiugyMCsR0U/arcgis/rest/services/Parcel_layers_ArcGISonline_LUZO/FeatureServer/0/query"
 
 @app.route('/')
 def home():
@@ -15,7 +16,7 @@ def get_zoning():
     if not address:
         return jsonify({"error": "Please provide an address using ?address="}), 400
 
-    # Step 1: Geocode the address using ArcGIS
+    # Step 1: Geocode address
     geocode_url = "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates"
     geocode_params = {
         "f": "json",
@@ -32,8 +33,25 @@ def get_zoning():
     lon = location['x']
     lat = location['y']
 
-    # Step 2: Query zoning API using a buffered bounding box
-    buffer = 0.0002  # ~20 meters
+    # Step 1.5: Query APN from parcel layer
+    apn = ""
+    apn_params = {
+        "geometry": f"{lon},{lat}",
+        "geometryType": "esriGeometryPoint",
+        "inSR": "4326",
+        "spatialRel": "esriSpatialRelIntersects",
+        "outFields": "APN",
+        "returnGeometry": "false",
+        "f": "json"
+    }
+
+    apn_resp = requests.get(PARCEL_LAYER_URL, params=apn_params).json()
+    apn_features = apn_resp.get("features", [])
+    if apn_features:
+        apn = apn_features[0]["attributes"].get("APN", "")
+
+    # Step 2: Query zoning/land use layer
+    buffer = 0.0002
     zoning_params = {
         "geometry": f"{lon - buffer},{lat - buffer},{lon + buffer},{lat + buffer}",
         "geometryType": "esriGeometryEnvelope",
@@ -52,8 +70,9 @@ def get_zoning():
             "latitude": lat,
             "longitude": lon,
             "zoning_code": "",
-            "status": "No zoning code found. This may be outside the GIS layer coverage."
-        }), 200
+            "parcel_apn": apn,
+            "status": "No zoning code found. May be outside the GIS layer."
+        })
 
     attr = features[0]['attributes']
 
@@ -61,11 +80,11 @@ def get_zoning():
         "input_address": address,
         "latitude": lat,
         "longitude": lon,
+        "parcel_apn": apn,
         "zoning_code": attr.get("ZONING", ""),
         "zoning_description": attr.get("ZonDescrip", ""),
         "zoning_class": attr.get("GEN_CLASS", ""),
         "zoning_type": attr.get("GEN_TYPE", ""),
-        "parcel_apn": attr.get("APN", ""),
         "land_use_code": attr.get("LANDUSE", ""),
         "land_use_description": attr.get("LAND_DESC", ""),
         "urban_status": attr.get("URBAN", ""),
@@ -75,3 +94,4 @@ def get_zoning():
 
 if __name__ == '__main__':
     app.run(debug=True)
+

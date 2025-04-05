@@ -3,7 +3,6 @@ import requests
 
 app = Flask(__name__)
 
-# ✅ Santa Barbara County Zoning Layer API
 ZONING_LAYER_URL = "https://services8.arcgis.com/s7n9cRiugyMCsR0U/arcgis/rest/services/zoning_polys_LUZO/FeatureServer/0/query"
 
 @app.route('/')
@@ -33,7 +32,7 @@ def get_zoning():
     lon = location['x']
     lat = location['y']
 
-    # Step 2: Query zoning layer with buffered geometry envelope
+    # Step 2: Query zoning API using a buffered bounding box
     buffer = 0.0002  # ~20 meters
     zoning_params = {
         "geometry": f"{lon - buffer},{lat - buffer},{lon + buffer},{lat + buffer}",
@@ -53,7 +52,7 @@ def get_zoning():
             "latitude": lat,
             "longitude": lon,
             "zoning_code": "",
-            "status": "No zoning code found. This may be outside the covered GIS area."
+            "status": "No zoning code found. This may be outside the GIS layer coverage."
         }), 200
 
     attr = features[0]['attributes']
@@ -65,7 +64,13 @@ def get_zoning():
         "zoning_code": attr.get("ZONING", ""),
         "zoning_description": attr.get("ZonDescrip", ""),
         "zoning_class": attr.get("GEN_CLASS", ""),
-        "zoning_type": attr.get("GEN_TYPE", "")
+        "zoning_type": attr.get("GEN_TYPE", ""),
+        "parcel_apn": attr.get("APN", ""),
+        "land_use_code": attr.get("LANDUSE", ""),
+        "land_use_description": attr.get("LAND_DESC", ""),
+        "urban_status": attr.get("URBAN", ""),
+        "general_plan": attr.get("GEN_PLAN", ""),
+        "zoning_overlay": attr.get("ZONEMOD", "")
     })
 
 if __name__ == '__main__':

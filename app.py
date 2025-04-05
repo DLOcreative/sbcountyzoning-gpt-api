@@ -52,7 +52,8 @@ def get_zoning():
     attr = features[0]['attributes']
 
     return jsonify({
-        "input_address": address,
-        "latitude": lat,
-        "longitude": lon,
-        "zoning_code": attr.get("ZONE_CODE", "
+    "input_address": address,
+    "latitude": lat,
+    "longitude": lon,
+    "zoning_code": attr.get("ZONE_CODE", "")
+})

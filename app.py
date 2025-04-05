@@ -3,7 +3,7 @@ import requests
 
 app = Flask(__name__)
 
-# ✅ Your actual zoning layer endpoint
+# ✅ Santa Barbara County Zoning Layer API
 ZONING_LAYER_URL = "https://services8.arcgis.com/s7n9cRiugyMCsR0U/arcgis/rest/services/zoning_polys_LUZO/FeatureServer/0/query"
 
 @app.route('/')
@@ -16,7 +16,7 @@ def get_zoning():
     if not address:
         return jsonify({"error": "Please provide an address using ?address="}), 400
 
-    # Step 1: Geocode the address
+    # Step 1: Geocode the address using ArcGIS
     geocode_url = "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates"
     geocode_params = {
         "f": "json",
@@ -33,10 +33,11 @@ def get_zoning():
     lon = location['x']
     lat = location['y']
 
-    # Step 2: Query zoning API
+    # Step 2: Query zoning layer with buffered geometry envelope
+    buffer = 0.0002  # ~20 meters
     zoning_params = {
-        "geometry": f"{lon},{lat}",
-        "geometryType": "esriGeometryPoint",
+        "geometry": f"{lon - buffer},{lat - buffer},{lon + buffer},{lat + buffer}",
+        "geometryType": "esriGeometryEnvelope",
         "inSR": "4326",
         "spatialRel": "esriSpatialRelIntersects",
         "outFields": "*",
@@ -47,13 +48,25 @@ def get_zoning():
     zoning_res = requests.get(ZONING_LAYER_URL, params=zoning_params).json()
     features = zoning_res.get('features', [])
     if not features:
-        return jsonify({"zoning": "Not found in zoning layer"}), 404
+        return jsonify({
+            "input_address": address,
+            "latitude": lat,
+            "longitude": lon,
+            "zoning_code": "",
+            "status": "No zoning code found. This may be outside the covered GIS area."
+        }), 200
 
     attr = features[0]['attributes']
 
     return jsonify({
-    "input_address": address,
-    "latitude": lat,
-    "longitude": lon,
-    "zoning_code": attr.get("ZONE_CODE", "")
-})
+        "input_address": address,
+        "latitude": lat,
+        "longitude": lon,
+        "zoning_code": attr.get("ZONING", ""),
+        "zoning_description": attr.get("ZonDescrip", ""),
+        "zoning_class": attr.get("GEN_CLASS", ""),
+        "zoning_type": attr.get("GEN_TYPE", "")
+    })
+
+if __name__ == '__main__':
+    app.run(debug=True)
